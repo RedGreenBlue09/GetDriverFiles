@@ -58,9 +58,18 @@ int main(int argc, char** argv) {
 		return 1;
 	}
 
+	// A driver package contains:
+	//  + INF files (the user already knows it)
+	//  + Catalog files
+	//  + Driver files (.sys) and other files
+	//    I think these 2 are all included in [SourceDisksFiles],
+	//    They're called "source files".
+	// 
+	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/components-of-a-driver-package
+
 	// Get catalog files
-	
 	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
+
 	char* asCatalogFileVariants[] = {
 		"CatalogFile",
 		"CatalogFile.NT",
@@ -108,15 +117,15 @@ int main(int argc, char** argv) {
 	};
 
 	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
-	// "Windows assumes that the catalog file is in the same location as the INF file."
+	// From the docs: "Windows assumes that the catalog file is in the same location as the INF file."
 
 	char** asCatalogFileList = (char**)CatalogFileList.pData;
 	for (size_t i = 0; i < CatalogFileList.UsedSize; ++i)
 		printf("%s\n", asCatalogFileList[i]);
 
 	// Get source files
-
 	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-sourcedisksfiles-section
+
 	char* asSourceDisksFilesVariants[] = {
 		"SourceDisksFiles",
 		"SourceDisksFiles.X86",
@@ -171,6 +180,17 @@ int main(int argc, char** argv) {
 				// Remove '\0' and add '\\'
 				size_t SubdirSlashLength = bHaveSubdir ? ((size_t)SubdirLength - 1 + 1) : 0;
 				*psFilePath = malloc_guarded((SubdirSlashLength + FileNameLength) * sizeof(char));
+
+				// From the docs:
+				// "If this value is omitted from an entry, the named source file
+				// is assumed to be in the path directory that was specified in
+				// the SourceDisksFiles section for the given disk or,
+				// if no path directory was specified, in the installation root."
+
+				// Disks can have custom paths that the [SourceDisksFiles]'s
+				// path field is related to (defined in [SourceDisksNames],
+				// so this path is not always relative to the installation root.
+				// CAUTION: This case is not covered in this program as it's not required.
 
 				if (bHaveSubdir) {
 					SetupGetStringFieldA(
