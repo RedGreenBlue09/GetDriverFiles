@@ -18,15 +18,15 @@
     <ClCompile Include="Source\Main.c">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="Source\DynamicArray.c">
+    <ClCompile Include="Source\Tree234.c">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Include\DynamicArray.h">
+    <ClInclude Include="Include\GuardedMalloc.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="Include\GuardedMalloc.h">
+    <ClInclude Include="Include\Tree234.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>

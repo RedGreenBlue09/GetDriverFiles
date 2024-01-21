@@ -4,8 +4,8 @@
 #include <Windows.h>
 #include <setupapi.h>
 
-#include "DynamicArray.h"
 #include "GuardedMalloc.h"
+#include "Tree234.h"
 
 #define static_arrlen(X) (sizeof(X) / sizeof(*X))
 #define cast(T, X) ((T)(X))
@@ -22,6 +22,15 @@ static char* GetSystemErrorMessage(uint32_t Win32Error) {
 		NULL
 	);
 	return sErrorMessage;
+}
+
+typedef struct {
+	int32_t Id;
+	char* Path;
+} disk_properties;
+
+static int DiskIdCompare(disk_properties* A, disk_properties* B) {
+	return (A->Id > B->Id) - (A->Id < B->Id);
 }
 
 int main(int argc, char** argv) {
@@ -79,8 +88,6 @@ int main(int argc, char** argv) {
 		"CatalogFile.NTARM",
 		"CatalogFile.NTARM64",
 	};
-	dynamic_array CatalogFileList;
-	DaInitialize(&CatalogFileList, sizeof(char*));
 	for (size_t i = 0; i < static_arrlen(asCatalogFileVariants); ++i) {
 
 		// Assuming there are no repeated entry.
@@ -94,10 +101,7 @@ int main(int argc, char** argv) {
 			)
 		) {
 
-			DaResize(&CatalogFileList, CatalogFileList.UsedSize + 1);
-			char** psFileName = (char**)CatalogFileList.pData + (CatalogFileList.UsedSize - 1);
-
-			uint32_t FileNameLength = 0;
+			uint32_t FileNameLength = 0; // '\0' included
 			if (
 				!SetupGetStringFieldA(
 					&InfContext,
@@ -107,21 +111,98 @@ int main(int argc, char** argv) {
 					&FileNameLength
 				)
 			)
-				continue; // TODO: Error handling
+				continue; // TODO: Error message
 
-			*psFileName = malloc_guarded(FileNameLength * sizeof(char));
-			SetupGetStringFieldA(&InfContext, 1, *psFileName, FileNameLength, NULL);
+			char* psFileName = malloc_guarded(FileNameLength * sizeof(char));
+			SetupGetStringFieldA(&InfContext, 1, psFileName, FileNameLength, NULL);
+
+			// From the docs: "Windows assumes that the catalog file is in the same location as the INF file."
+			puts(psFileName);
+			free(psFileName);
 
 		}
 
 	};
 
-	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
-	// From the docs: "Windows assumes that the catalog file is in the same location as the INF file."
+	// Get disk paths
+	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-sourcedisksnames-section
+	
+	char* asSourceDisksNamesVariants[] = {
+		"SourceDisksNames",
+		"SourceDisksNames.X86",
+		"SourceDisksNames.IA64",
+		"SourceDisksNames.AMD64",
+		"SourceDisksNames.ARM",
+		"SourceDisksNames.ARM64",
+	};
+	tree234* pDisksPropTree = newtree234(DiskIdCompare);
+	for (size_t i = 0; i < static_arrlen(asSourceDisksNamesVariants); ++i) {
 
-	char** asCatalogFileList = (char**)CatalogFileList.pData;
-	for (size_t i = 0; i < CatalogFileList.UsedSize; ++i)
-		printf("%s\n", asCatalogFileList[i]);
+		// Assuming there are no repeated entry.
+		INFCONTEXT InfContext;
+		if (
+			SetupFindFirstLineA(
+				hInf,
+				asSourceDisksNamesVariants[i],
+				NULL,
+				&InfContext
+			)
+		) {
+
+			int32_t RemainingLines = SetupGetLineCountA(hInf, asSourceDisksNamesVariants[i]);
+			if (RemainingLines == -1)
+				continue;
+
+			while (RemainingLines > 0) {
+				
+				disk_properties* pDiskProperties = malloc_guarded(sizeof(*pDiskProperties));
+				if (!SetupGetIntField(&InfContext, 0, &pDiskProperties->Id)) {
+					// TODO: Error message
+					goto NextLine0;
+				}
+
+				// Skip overlapped entries
+				if (find234(pDisksPropTree, pDiskProperties, NULL))
+					goto NextLine0;
+
+				uint32_t PathLength = 0;
+				if (
+					SetupGetStringFieldA(
+						&InfContext,
+						4,
+						NULL,
+						0,
+						&PathLength
+					)
+				) {
+					if (PathLength == 0)
+						// Don't malloc nothing.
+						pDiskProperties->Path = NULL;
+					else {
+						pDiskProperties->Path = malloc_guarded(PathLength * sizeof(*pDiskProperties->Path));
+						SetupGetStringFieldA(
+							&InfContext,
+							4,
+							pDiskProperties->Path,
+							PathLength,
+							NULL
+						);
+						// Luckily, any trailing backslashes are removed by this function.
+					}
+				} else {
+					pDiskProperties->Path = NULL;
+				}
+				add234(pDisksPropTree, pDiskProperties);
+
+				NextLine0:
+				SetupFindNextLine(&InfContext, &InfContext);
+				--RemainingLines;
+
+			};
+
+		}
+
+	};
 
 	// Get source files
 	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-sourcedisksfiles-section
@@ -134,8 +215,6 @@ int main(int argc, char** argv) {
 		"SourceDisksFiles.ARM",
 		"SourceDisksFiles.ARM64",
 	};
-	dynamic_array SourceFileList;
-	DaInitialize(&SourceFileList, sizeof(char*));
 	for (size_t i = 0; i < static_arrlen(asSourceDisksFilesVariants); ++i) {
 
 		// Assuming there are no repeated entry.
@@ -148,25 +227,60 @@ int main(int argc, char** argv) {
 				&InfContext
 			)
 		) {
+
 			int32_t RemainingLines = SetupGetLineCountA(hInf, asSourceDisksFilesVariants[i]);
 			if (RemainingLines == -1)
-				continue; // TODO: Error handling
+				continue;
 
 			while (RemainingLines > 0) {
 
-				DaResize(&SourceFileList, SourceFileList.UsedSize + 1);
-				char** psFilePath = (char**)SourceFileList.pData + (SourceFileList.UsedSize - 1);
+				// Get file name length
 
 				uint32_t FileNameLength = 0;
 				if (
 					!SetupGetStringFieldA(
 						&InfContext,
-						0, NULL,
+						0,
+						NULL,
 						0,
 						&FileNameLength
 					)
-				)
-					continue; // TODO: Error handling
+				) {
+					// TODO: Error message
+					goto NextLine1;
+				}
+				FileNameLength -= 1;
+
+				// Get corresponding disk path
+
+				uint32_t DiskId = 0;
+				if (!SetupGetIntField(&InfContext, 1, &DiskId)) {
+					// TODO: Error message
+					goto NextLine1;
+				}
+
+				disk_properties* pDiskProperties = find234(
+					pDisksPropTree,
+					&(disk_properties){ DiskId, NULL },
+					NULL
+				);
+
+				BOOL bHaveDiskPath;
+				size_t DiskPathLength = 0;
+				if (pDiskProperties) {
+					if (pDiskProperties->Path) {
+						DiskPathLength = strlen(pDiskProperties->Path);
+						bHaveDiskPath = TRUE;
+					}
+					else
+						bHaveDiskPath = FALSE;
+				} else {
+					// TODO: Error message
+					bHaveDiskPath = FALSE;
+				}
+
+				// Get sub dir length
+
 				uint32_t SubdirLength = 0;
 				BOOL bHaveSubdir = SetupGetStringFieldA(
 					&InfContext,
@@ -175,52 +289,73 @@ int main(int argc, char** argv) {
 					0,
 					&SubdirLength
 				);
+				SubdirLength -= 1;
+				bHaveSubdir &= SubdirLength > 0; // Handle empty sub dir "0,,"
 
-				bHaveSubdir &= SubdirLength > 1; // Handle empty sub dir "0,,"
-				// Remove '\0' and add '\\'
-				size_t SubdirSlashLength = bHaveSubdir ? ((size_t)SubdirLength - 1 + 1) : 0;
-				*psFilePath = malloc_guarded((SubdirSlashLength + FileNameLength) * sizeof(char));
+				// Combine all parts
 
-				// From the docs:
-				// "If this value is omitted from an entry, the named source file
-				// is assumed to be in the path directory that was specified in
-				// the SourceDisksFiles section for the given disk or,
-				// if no path directory was specified, in the installation root."
+				size_t FullPathLength = 0;
+				if (bHaveDiskPath)
+					FullPathLength += DiskPathLength + 1; // Add '\\'
+				if (bHaveSubdir)
+					FullPathLength += SubdirLength + 1; // Add '\\'
+				FullPathLength += FileNameLength + 1; // Add '\0'
+				// Note: Always leave a character for SetupGetStringFieldA to put '\0'
 
-				// Disks can have custom paths that the [SourceDisksFiles]'s
-				// path field is related to (defined in [SourceDisksNames],
-				// so this path is not always relative to the installation root.
-				// CAUTION: This case is not covered in this program as it's not required.
+				char* sFullPathName = malloc_guarded(FullPathLength * sizeof(*sFullPathName));
+				char* pFullPathName2 = sFullPathName;
+
+				if (bHaveDiskPath) {
+					memcpy(pFullPathName2, pDiskProperties->Path, DiskPathLength);
+					pFullPathName2 += DiskPathLength;
+					*pFullPathName2++ = '\\';
+				}
 
 				if (bHaveSubdir) {
 					SetupGetStringFieldA(
 						&InfContext,
 						2,
-						*psFilePath,
-						SubdirLength,
+						pFullPathName2,
+						SubdirLength + 1,
 						NULL
 					);
-					(*psFilePath)[SubdirSlashLength - 1] = '\\';
+					pFullPathName2 += SubdirLength;
+					*pFullPathName2++ = '\\';
 				}
+
 				SetupGetStringFieldA(
 					&InfContext,
 					0,
-					*psFilePath + SubdirSlashLength,
-					FileNameLength,
+					pFullPathName2,
+					FileNameLength + 1,
 					NULL
 				);
+				pFullPathName2 += FileNameLength;
 
+				// Print
+
+				puts(sFullPathName);
+				free(sFullPathName);
+
+				NextLine1:
 				SetupFindNextLine(&InfContext, &InfContext);
 				--RemainingLines;
 
 			};
+
 		}
 
 	};
 
-	char** asSourceFileList = (char**)SourceFileList.pData;
-	for (size_t i = 0; i < SourceFileList.UsedSize; ++i)
-		printf("%s\n", asSourceFileList[i]);
+	for (
+		disk_properties* p = delpos234(pDisksPropTree, 0);
+		p != NULL;
+		p = delpos234(pDisksPropTree, 0)
+	) {
+		if (p->Path) free(p->Path);
+		free(p);
+	}
+	freetree234(pDisksPropTree);
 
 	return 0;
 }

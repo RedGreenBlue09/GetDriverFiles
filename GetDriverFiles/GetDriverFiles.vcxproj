@@ -19,12 +19,12 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Source\DynamicArray.c" />
     <ClCompile Include="Source\Main.c" />
+    <ClCompile Include="Source\Tree234.c" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="Include\DynamicArray.h" />
     <ClInclude Include="Include\GuardedMalloc.h" />
+    <ClInclude Include="Include\Tree234.h" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>17.0</VCProjectVersion>
