@@ -175,7 +175,7 @@ int main(int argc, char** argv) {
 						&PathLength
 					)
 				) {
-					if (PathLength == 0)
+					if (PathLength == 1) // If only '\0'
 						// Don't malloc nothing.
 						pDiskProperties->Path = NULL;
 					else {
@@ -271,8 +271,7 @@ int main(int argc, char** argv) {
 					if (pDiskProperties->Path) {
 						DiskPathLength = strlen(pDiskProperties->Path);
 						bHaveDiskPath = TRUE;
-					}
-					else
+					} else
 						bHaveDiskPath = FALSE;
 				} else {
 					// TODO: Error message
