@@ -21,6 +21,14 @@ static char* GetSystemErrorMessage(uint32_t Win32Error) {
 		0,
 		NULL
 	);
+
+	if (!sErrorMessage) {
+		size_t Length = sizeof("An unknown error has occured.");
+		sErrorMessage = LocalAlloc(LMEM_FIXED, Length);
+		if (!sErrorMessage)
+			abort();
+		memcpy(sErrorMessage, "An unknown error has occured.", Length);
+	}
 	return sErrorMessage;
 }
 
@@ -50,30 +58,36 @@ int main(int argc, char** argv) {
 		return ERROR_INVALID_PARAMETER;
 	}
 
+	// Normalize path
+
+	size_t FullInfPathLength = GetFullPathNameA(argv[1], 0, NULL, NULL); // Contains '\0'
+	if (FullInfPathLength == 0) {
+		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
+		printf("ERROR: %s:\n", sErrorMessage);
+		LocalFree(sErrorMessage);
+		return GetLastError();
+	}
+
+	char* FullInfPath = malloc(FullInfPathLength * sizeof(*FullInfPath));
+	if (GetFullPathNameA(argv[1], FullInfPathLength, FullInfPath, NULL) == 0)
+		abort(); // WTF? Nah, I prefer less code.
+
 	unsigned int ErrorLine; // Currently unused
 	HINF hInf = SetupOpenInfFileA(
-		argv[1],
+		FullInfPath,
 		NULL,
 		INF_STYLE_WIN4,
 		&ErrorLine
 	);
 	if (hInf == INVALID_HANDLE_VALUE) {
 		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
-		if (sErrorMessage) {
-			printf(
-				"ERROR: Unable to open the file '%s':\n"
-				"%s",
-				argv[1],
-				sErrorMessage
-			);
-			LocalFree(sErrorMessage);
-		} else {
-			printf(
-				"ERROR: Unable to open the file '%s':\n"
-				"An unknown error has occured.",
-				argv[1]
-			);
-		}
+		printf(
+			"ERROR: Unable to open the file '%s':\n"
+			"%s",
+			FullInfPath,
+			sErrorMessage
+		);
+		LocalFree(sErrorMessage);
 		return GetLastError();
 	}
 
@@ -121,7 +135,8 @@ int main(int argc, char** argv) {
 					&FileNameLength
 				)
 			)
-				// Bug: This never happens as it'll get FieldIndex 0 instead.
+				// Bug: This never happens as it'll get FieldIndex 0 instead,
+				// but that's how SetupApi works with wierd files so lets not change that.
 				continue;
 
 			char* psFileName = malloc_guarded(FileNameLength * sizeof(char));
@@ -270,10 +285,9 @@ int main(int argc, char** argv) {
 						0,
 						&FileNameLength
 					)
-				) {
-					// Never happens as it'll outputs empty string instead.
+				)
+					// Never happens as it'll output empty string instead.
 					goto NextLine1;
-				}
 				FileNameLength -= 1;
 
 				// Get corresponding disk path
