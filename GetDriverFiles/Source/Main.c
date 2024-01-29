@@ -69,8 +69,7 @@ int main(int argc, char** argv) {
 	}
 
 	char* FullInfPath = malloc(FullInfPathLength * sizeof(*FullInfPath));
-	if (GetFullPathNameA(argv[1], FullInfPathLength, FullInfPath, NULL) == 0)
-		abort(); // WTF? Nah, I prefer less code.
+	GetFullPathNameA(argv[1], (uint32_t)FullInfPathLength, FullInfPath, NULL);
 
 	unsigned int ErrorLine; // Currently unused
 	HINF hInf = SetupOpenInfFileA(
