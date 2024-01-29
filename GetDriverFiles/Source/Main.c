@@ -25,7 +25,7 @@ static char* GetSystemErrorMessage(uint32_t Win32Error) {
 }
 
 // MaxSize may includes '\0'
-size_t RemoveLeadingBslash(char* Str, size_t MaxSize) {
+static size_t RemoveLeadingBslash(char* Str, size_t MaxSize) {
 	size_t i;
 	for (i = 0; i < MaxSize && Str[i] == '\\'; ++i);
 	size_t Offset = i;
@@ -298,7 +298,7 @@ int main(int argc, char** argv) {
 					fprintf(
 						stderr,
 						"WARNING: Section %u, line %u: "
-						"Invalid diskid %"PRIu32". Skipping line.\n",
+						"Unknown diskid %"PRIu32". Skipping line.\n",
 						InfContext.Section,
 						InfContext.Line,
 						DiskId
