@@ -46,8 +46,8 @@ static int DiskIdCompare(disk_properties* A, disk_properties* B) {
 int main(int argc, char** argv) {
 
 	if (argc < 2) {
-		fprintf(stderr, "No INF file specified.\n");
-		return 1;
+		fprintf(stderr, "ERROR: No INF file specified.\n");
+		return ERROR_INVALID_PARAMETER;
 	}
 
 	unsigned int ErrorLine; // Currently unused
@@ -61,7 +61,7 @@ int main(int argc, char** argv) {
 		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
 		if (sErrorMessage) {
 			printf(
-				"Unable to open the file '%s':\n"
+				"ERROR: Unable to open the file '%s':\n"
 				"%s",
 				argv[1],
 				sErrorMessage
@@ -69,12 +69,12 @@ int main(int argc, char** argv) {
 			LocalFree(sErrorMessage);
 		} else {
 			printf(
-				"Unable to open the file '%s':\n"
+				"ERROR: Unable to open the file '%s':\n"
 				"An unknown error has occured.",
 				argv[1]
 			);
 		}
-		return 1;
+		return GetLastError();
 	}
 
 	// A driver package contains:
@@ -121,7 +121,8 @@ int main(int argc, char** argv) {
 					&FileNameLength
 				)
 			)
-				continue; // TODO: Error message
+				// Bug: This never happens as it'll get FieldIndex 0 instead.
+				continue;
 
 			char* psFileName = malloc_guarded(FileNameLength * sizeof(char));
 			SetupGetStringFieldA(&InfContext, 1, psFileName, FileNameLength, NULL);
@@ -167,7 +168,13 @@ int main(int argc, char** argv) {
 				
 				disk_properties* pDiskProperties = malloc_guarded(sizeof(*pDiskProperties));
 				if (!SetupGetIntField(&InfContext, 0, &pDiskProperties->Id)) {
-					// TODO: Error message
+					fprintf(
+						stderr,
+						"WARNING: Section %u, line %u: "
+						"Cannot find diskid. Skipping line.\n",
+						InfContext.Section,
+						InfContext.Line
+					);
 					goto NextLine0;
 				}
 
@@ -256,7 +263,7 @@ int main(int argc, char** argv) {
 						&FileNameLength
 					)
 				) {
-					// TODO: Error message
+					// Never happens as it'll outputs empty string instead.
 					goto NextLine1;
 				}
 				FileNameLength -= 1;
@@ -265,7 +272,13 @@ int main(int argc, char** argv) {
 
 				uint32_t DiskId = 0;
 				if (!SetupGetIntField(&InfContext, 1, &DiskId)) {
-					// TODO: Error message
+					fprintf(
+						stderr,
+						"WARNING: Section %u, line %u: "
+						"Cannot find diskid. Skipping line.\n",
+						InfContext.Section,
+						InfContext.Line
+					);
 					goto NextLine1;
 				}
 
@@ -275,17 +288,22 @@ int main(int argc, char** argv) {
 					NULL
 				);
 
-				BOOL bHaveDiskPath;
+				BOOL bHaveDiskPath = FALSE;
 				size_t DiskPathLength = 0;
 				if (pDiskProperties) {
-					if (pDiskProperties->Path) {
+					bHaveDiskPath = !!pDiskProperties->Path;
+					if (pDiskProperties->Path)
 						DiskPathLength = strlen(pDiskProperties->Path);
-						bHaveDiskPath = TRUE;
-					} else
-						bHaveDiskPath = FALSE;
 				} else {
-					// TODO: Error message
-					bHaveDiskPath = FALSE;
+					fprintf(
+						stderr,
+						"WARNING: Section %u, line %u: "
+						"Invalid diskid %"PRIu32". Skipping line.\n",
+						InfContext.Section,
+						InfContext.Line,
+						DiskId
+					);
+					goto NextLine1;
 				}
 
 				// Get sub dir length
@@ -369,5 +387,5 @@ int main(int argc, char** argv) {
 	}
 	freetree234(pDisksPropTree);
 
-	return 0;
+	return ERROR_SUCCESS;
 }
