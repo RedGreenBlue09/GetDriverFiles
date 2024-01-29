@@ -24,6 +24,16 @@ static char* GetSystemErrorMessage(uint32_t Win32Error) {
 	return sErrorMessage;
 }
 
+// MaxSize may includes '\0'
+size_t RemoveLeadingBslash(char* Str, size_t MaxSize) {
+	size_t i;
+	for (i = 0; i < MaxSize && Str[i] == '\\'; ++i);
+	size_t Offset = i;
+	for (i; i < MaxSize; ++i)
+		Str[i - Offset] = Str[i];
+	return Offset;
+}
+
 typedef struct {
 	int32_t Id;
 	char* Path;
@@ -165,7 +175,7 @@ int main(int argc, char** argv) {
 				if (find234(pDisksPropTree, pDiskProperties, NULL))
 					goto NextLine0;
 
-				uint32_t PathLength = 0;
+				uint32_t PathLength = 0; // Incldues '\0'
 				if (
 					SetupGetStringFieldA(
 						&InfContext,
@@ -175,10 +185,7 @@ int main(int argc, char** argv) {
 						&PathLength
 					)
 				) {
-					if (PathLength == 1) // If only '\0'
-						// Don't malloc nothing.
-						pDiskProperties->Path = NULL;
-					else {
+					if (PathLength > 1) {
 						pDiskProperties->Path = malloc_guarded(PathLength * sizeof(*pDiskProperties->Path));
 						SetupGetStringFieldA(
 							&InfContext,
@@ -186,8 +193,11 @@ int main(int argc, char** argv) {
 							pDiskProperties->Path,
 							PathLength,
 							NULL
-						);
-						// Luckily, any trailing backslashes are removed by this function.
+						); // Any trailing backslashes are not included.
+						RemoveLeadingBslash(pDiskProperties->Path, PathLength);
+					} else {
+						// Don't malloc empty string.
+						pDiskProperties->Path = NULL;
 					}
 				} else {
 					pDiskProperties->Path = NULL;
@@ -318,9 +328,12 @@ int main(int argc, char** argv) {
 						SubdirLength + 1,
 						NULL
 					);
-					pFullPathName2 += SubdirLength;
+					size_t nLeadingBSlash = RemoveLeadingBslash(pFullPathName2, SubdirLength + 1);
+					pFullPathName2 += SubdirLength - nLeadingBSlash;
 					*pFullPathName2++ = '\\';
 				}
+
+				// Append file name.
 
 				SetupGetStringFieldA(
 					&InfContext,
