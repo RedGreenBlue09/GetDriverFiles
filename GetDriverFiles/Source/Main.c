@@ -178,10 +178,18 @@ int main(int argc, char** argv) {
 					goto NextLine0;
 				}
 
-				// Skip overlapped entries
-				if (find234(pDisksPropTree, pDiskProperties, NULL))
+				// Skip repeated entries
+				if (find234(pDisksPropTree, pDiskProperties, NULL)) {
+					fprintf(
+						stderr,
+						"WARNING: Section %u, line %u: "
+						"Repeated diskid %"PRIu32". Skipping line.\n",
+						InfContext.Section,
+						InfContext.Line,
+						pDiskProperties->Id
+					);
 					goto NextLine0;
-
+				}
 				uint32_t PathLength = 0; // Incldues '\0'
 				if (
 					SetupGetStringFieldA(
