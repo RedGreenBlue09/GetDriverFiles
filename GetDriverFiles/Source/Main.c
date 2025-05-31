@@ -51,55 +51,8 @@ static int DiskIdCompare(disk_properties* A, disk_properties* B) {
 	return (A->Id > B->Id) - (A->Id < B->Id);
 }
 
-int main(int argc, char** argv) {
-
-	if (argc < 2) {
-		fprintf(stderr, "ERROR: No INF file specified.\n");
-		return ERROR_INVALID_PARAMETER;
-	}
-
-	// Normalize path
-
-	size_t FullInfPathLength = GetFullPathNameA(argv[1], 0, NULL, NULL); // Contains '\0'
-	if (FullInfPathLength == 0) {
-		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
-		printf("ERROR: %s:\n", sErrorMessage);
-		LocalFree(sErrorMessage);
-		return GetLastError();
-	}
-
-	char* FullInfPath = malloc(FullInfPathLength * sizeof(*FullInfPath));
-	GetFullPathNameA(argv[1], (uint32_t)FullInfPathLength, FullInfPath, NULL);
-
-	unsigned int ErrorLine; // Currently unused
-	HINF hInf = SetupOpenInfFileA(
-		FullInfPath,
-		NULL,
-		INF_STYLE_WIN4,
-		&ErrorLine
-	);
-	if (hInf == INVALID_HANDLE_VALUE) {
-		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
-		printf(
-			"ERROR: Unable to open the file '%s':\n"
-			"%s",
-			FullInfPath,
-			sErrorMessage
-		);
-		LocalFree(sErrorMessage);
-		return GetLastError();
-	}
-
-	// A driver package contains:
-	//  + INF files (the user already knows it)
-	//  + Catalog files
-	//  + Driver files (.sys) and other files
-	//    I think these 2 are all included in [SourceDisksFiles],
-	//    They're called "source files".
-	// 
-	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/components-of-a-driver-package
-
-	// Get catalog files
+static void GetCatalogFile(HINF hInf) {
+	// Get catalog file
 	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-version-section
 
 	char* asCatalogFileVariants[] = {
@@ -148,10 +101,13 @@ int main(int argc, char** argv) {
 		}
 
 	};
+}
+
+static void GetSourceFiles(HINF hInf) {
 
 	// Get disk paths
 	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/inf-sourcedisksnames-section
-	
+
 	char* asSourceDisksNamesVariants[] = {
 		"SourceDisksNames",
 		"SourceDisksNames.X86",
@@ -179,7 +135,7 @@ int main(int argc, char** argv) {
 				continue;
 
 			while (RemainingLines > 0) {
-				
+
 				disk_properties* pDiskProperties = malloc_guarded(sizeof(*pDiskProperties));
 				if (!SetupGetIntField(&InfContext, 0, &pDiskProperties->Id)) {
 					fprintf(
@@ -407,6 +363,81 @@ int main(int argc, char** argv) {
 		free(p);
 	}
 	freetree234(pDisksPropTree);
+}
 
+int main(int argc, char** argv) {
+
+	if (argc < 2) {
+		fprintf(
+			stderr,
+			"ERROR: No INF file specified.\n"
+			"\n"
+			"USAGE: %s <InfFile> [/source | /cat]\n"
+			"\n"
+			"  /cat      Get catalog file only.\n"
+			"  /source   Get source files only.\n",
+			argv[0]
+		);
+		return ERROR_INVALID_PARAMETER;
+	}
+
+	// Normalize path
+
+	size_t FullInfPathLength = GetFullPathNameA(argv[1], 0, NULL, NULL); // Contains '\0'
+	if (FullInfPathLength == 0) {
+		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
+		printf("ERROR: %s:\n", sErrorMessage);
+		LocalFree(sErrorMessage);
+		return GetLastError();
+	}
+
+	char* FullInfPath = malloc(FullInfPathLength * sizeof(*FullInfPath));
+	GetFullPathNameA(argv[1], (uint32_t)FullInfPathLength, FullInfPath, NULL);
+
+	unsigned int ErrorLine; // Currently unused
+	HINF hInf = SetupOpenInfFileA(
+		FullInfPath,
+		NULL,
+		INF_STYLE_WIN4,
+		&ErrorLine
+	);
+	if (hInf == INVALID_HANDLE_VALUE) {
+		char* sErrorMessage = GetSystemErrorMessage(GetLastError());
+		printf(
+			"ERROR: Unable to open the file '%s':\n"
+			"%s",
+			FullInfPath,
+			sErrorMessage
+		);
+		LocalFree(sErrorMessage);
+		return GetLastError();
+	}
+
+	uint8_t bGetCatalog = 1;
+	uint8_t bGetSource = 1;
+	if (argc == 3) {
+		if (_stricmp("/cat", argv[2]) == 0)
+			bGetSource = 0;
+		else if (_stricmp("/source", argv[2]) == 0)
+			bGetCatalog = 0;
+		else
+			fprintf(stderr, "WARNING: Ignoring unknown option %s.\n", argv[2]);
+	}
+
+	// A driver package contains:
+	//  + INF files (the user already knows it)
+	//  + Catalog files
+	//  + Driver files (.sys) and other files
+	//    I think these 2 are all included in [SourceDisksFiles],
+	//    They're called "source files".
+	// 
+	// https://learn.microsoft.com/en-us/windows-hardware/drivers/install/components-of-a-driver-package
+
+	if (bGetCatalog)
+		GetCatalogFile(hInf);
+	if (bGetSource)
+		GetSourceFiles(hInf);
+
+	SetupCloseInfFile(hInf);
 	return ERROR_SUCCESS;
 }
